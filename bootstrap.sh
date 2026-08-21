@@ -171,6 +171,7 @@ build_dep_wlroots() {
       # build-dep needs deb-src (enabled by setup_deb_src); it covers most deps.
       # The explicit list adds wlroots >=0.18 deps and mango/scenefx deps.
       root apt-get build-dep -y wlroots 2>/dev/null || true
+      ensure_meson
       pm_install meson ninja-build pkg-config gcc g++ \
         libwayland-dev wayland-protocols libxkbcommon-dev libinput-dev libpixman-1-dev \
         libseat-dev libdrm-dev libdisplay-info-dev libliftoff-dev libgbm-dev libegl1-mesa-dev \
@@ -210,17 +211,34 @@ setup_deb_src() {
   fi
 }
 
+ensure_meson() {
+  # wlroots >=0.19 needs meson >= ~1.3; Debian stable ships an older one.
+  local need=1.3.0 have
+  have=$(meson --version 2>/dev/null || echo 0.0.0)
+  if [ "$(printf '%s\n%s\n' "$need" "$have" | sort -V | head -n1)" = "$need" ]; then
+    ok "meson $have (>= $need)"
+    return 0
+  fi
+  warn "meson $have is too old (need >= $need); upgrading via pip"
+  pm_install python3-pip >/dev/null 2>&1 || true
+  root pip3 install --break-system-packages -U meson ninja >/dev/null 2>&1 \
+    || root pip3 install -U meson ninja >/dev/null 2>&1 \
+    || warn "pip meson upgrade failed (build may fail)"
+  hash -r 2>/dev/null
+  log "meson now: $(meson --version 2>/dev/null || echo unknown)"
+}
+
 build_from_git() {
   local url="$1" tag="$2" dl="$3" name="$4" mopts="${5:-}"
-  local bd="/tmp/opencode/build/$name"
+  local bd="/tmp/opencode/build/$name" logf="/tmp/opencode/build/$name.log"
   if command -v "$name" >/dev/null 2>&1; then skip "$name (already built)"; return 0; fi
-  log "Building $name from source (tag: ${tag:-HEAD})..."
+  log "Building $name from source (tag: ${tag:-HEAD})... log: $logf"
   rm -rf "$bd"; mkdir -p "$bd"
-  git clone --depth 1 ${tag:+--branch "$tag"} "$url" "$bd" || { warn "clone failed: $name"; return 1; }
+  git clone --depth 1 ${tag:+--branch "$tag"} "$url" "$bd" >"$logf" 2>&1 || { warn "clone failed: $name"; tail -n 20 "$logf"; return 1; }
   if [ -f "$bd/meson.build" ]; then
-    meson setup "$bd/build" -Dprefix=/usr $mopts || { warn "meson setup failed: $name"; return 1; }
-    ninja -C "$bd/build" || { warn "build failed: $name"; return 1; }
-    root ninja -C "$bd/build" install || { warn "install failed: $name"; return 1; }
+    meson setup "$bd/build" -Dprefix=/usr $mopts >"$logf" 2>&1 || { warn "meson setup failed: $name"; tail -n 30 "$logf"; return 1; }
+    ninja -C "$bd/build" >>"$logf" 2>&1 || { warn "build failed: $name"; tail -n 30 "$logf"; return 1; }
+    root ninja -C "$bd/build" install >>"$logf" 2>&1 || { warn "install failed: $name"; tail -n 30 "$logf"; return 1; }
   else
     warn "$name has no meson.build; build manually"
     return 1
@@ -605,6 +623,8 @@ main() {
   verify_runtime
 
   root systemctl daemon-reload
+  if command -v mango >/dev/null 2>&1; then ok "mango installed: $(command -v mango)"; else err "mango NOT installed - see /tmp/opencode/build/mango.log"; fi
+  if command -v ly >/dev/null 2>&1; then ok "ly installed: $(command -v ly)"; else err "ly NOT installed - see /tmp/opencode/build/ly.log"; fi
   ok "Installation complete."
   if [ "$NOREBOOT" != "1" ]; then
     log "Reboot now (e.g. 'sudo reboot') and log in via ly; mango + omarchy-shell should start."
