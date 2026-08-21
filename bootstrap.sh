@@ -3,6 +3,7 @@
 set -o pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/basecamp/omarchy}"
+REPO_BRANCH="${REPO_BRANCH:-quattro}"
 CONFIG_URL="${CONFIG_URL:-https://raw.githubusercontent.com/kan935/mango-omarchy-setup/main/configs.tgz}"
 CHECK=0
 AUTOLOGIN=1
@@ -21,26 +22,29 @@ PM=""
 
 ARCH_PKGS=(
   wayland seatd xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk
-  foot wl-clipboard cliphist grim slurp brightnessctl pamixer pavucontrol
-  jq wtype tesseract starship fastfetch neovim mpv fzf ripgrep git curl
+  foot wl-clipboard cliphist grim slurp brightnessctl pamixer pavucontrol libnotify mako
+  jq wtype tesseract tesseract-data-eng starship fastfetch neovim mpv fzf ripgrep git curl
   walker bibata-cursor-theme hyprpicker mangowm quickshell
+  gum rofi imagemagick python ydotool networkmanager bluez-utils playerctl swaybg xdg-utils
   noto-fonts noto-fonts-emoji ttf-font-awesome ttf-jetbrains-mono
 )
 FEDORA_PKGS=(
   meson ninja-build gcc git curl
   seatd xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk
-  foot wl-clipboard cliphist grim slurp brightnessctl pamixer pavucontrol
+  foot wl-clipboard cliphist grim slurp brightnessctl pamixer pavucontrol libnotify mako
   jq wtype tesseract tesseract-langpack-eng starship fastfetch neovim mpv fzf ripgrep
   walker bibata-cursor-theme
+  gum rofi ImageMagick python3 python-unversioned-command ydotool NetworkManager bluez playerctl swaybg xdg-utils
   zig pam-devel libxcb-devel xorg-x11-xauth xorg-x11-server-Xwayland
-  google-noto-sans-fonts google-noto-emoji-fonts fontawesome-fonts jetbrains-mono-fonts
+  google-noto-sans-fonts google-noto-emoji-fonts jetbrains-mono-fonts
 )
 DEBIAN_PKGS=(
   meson ninja-build build-essential pkg-config git curl
   seatd xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk
-  foot wl-clipboard cliphist grim slurp brightnessctl pamixer pavucontrol
+  foot wl-clipboard cliphist grim slurp brightnessctl pamixer pavucontrol libnotify-bin mako
   jq wtype tesseract tesseract-ocr-eng starship fastfetch neovim mpv fzf ripgrep
   walker bibata-cursor-theme hyprpicker
+  gum rofi imagemagick python3 python-is-python3 ydotool network-manager bluez playerctl swaybg xdg-utils
   zig libpam0g-dev libxcb-xkb-dev xauth xwayland
   fonts-noto fonts-noto-color-emoji fonts-font-awesome fonts-jetbrains-mono
 )
@@ -292,7 +296,7 @@ install_omarchy_shell() {
     log "Cloning omarchy repo -> $dest"
     root mkdir -p "$dest"
     root chown -R "$TARGET_USER:" "$dest"
-    sudo -u "$TARGET_USER" git clone --depth 1 "$REPO_URL" "$dest" || { warn "omarchy clone failed"; return 1; }
+    sudo -u "$TARGET_USER" git clone --depth 1 -b "$REPO_BRANCH" "$REPO_URL" "$dest" || { warn "omarchy clone failed"; return 1; }
   else
     skip "omarchy repo (already present)"
   fi
@@ -320,6 +324,47 @@ apply_configs() {
     ok "installed mango.desktop session"
   fi
   ok "personal configs applied"
+}
+
+setup_ydotool() {
+  if ! command -v ydotool >/dev/null 2>&1; then skip "ydotool (not installed)"; return 0; fi
+  if ! getent group input >/dev/null 2>&1; then root groupadd input 2>/dev/null || true; fi
+  if ! id -nG "$TARGET_USER" 2>/dev/null | tr ' ' '\n' | grep -qx input; then
+    root usermod -aG input "$TARGET_USER" && ok "added $TARGET_USER to input group (needed by ydotool; re-login to apply)"
+  fi
+  if [ -f /usr/lib/systemd/user/ydotool.service ]; then
+    sudo -u "$TARGET_USER" XDG_RUNTIME_DIR="/run/user/$(id -u "$TARGET_USER")" \
+      systemctl --user enable ydotool.service 2>/dev/null || true
+    ok "enabled ydotool user service (best-effort)"
+  fi
+}
+
+setup_omarchy_state() {
+  local state="$TARGET_HOME/.local/state/omarchy/current"
+  root mkdir -p "$state" "$TARGET_HOME/.cache/omarchy"
+  root chown -R "$TARGET_USER:" "$TARGET_HOME/.local/state" "$TARGET_HOME/.cache/omarchy" 2>/dev/null
+  local theme="" bg=""
+  if [ -d "$TARGET_HOME/.config/omarchy/backgrounds" ]; then
+    for d in "$TARGET_HOME/.config/omarchy/backgrounds"/*; do
+      [ -d "$d" ] || continue
+      bg="$(find -L "$d" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.png' -o -iname '*.webp' -o -iname '*.jpeg' \) 2>/dev/null | head -n1)"
+      if [ -n "$bg" ]; then theme="$(basename "$d")"; break; fi
+    done
+  fi
+  if [ -z "$theme" ] && [ -d "$TARGET_HOME/.config/omarchy/themes" ]; then
+    theme="$(find "$TARGET_HOME/.config/omarchy/themes" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -n1)"
+    [ -n "$theme" ] && theme="$(basename "$theme")"
+  fi
+  if [ -n "$theme" ]; then
+    echo "$theme" | root tee "$state/theme.name" >/dev/null
+    root chown "$TARGET_USER:" "$state/theme.name"
+    ok "omarchy current theme set: $theme"
+  fi
+  if [ -n "$bg" ]; then
+    root ln -nsf "$bg" "$state/background"
+    root chown -h "$TARGET_USER:" "$state/background" 2>/dev/null
+    ok "omarchy current background link set"
+  fi
 }
 
 configure_ly() {
@@ -378,6 +423,7 @@ Options:
                      system layer (mango/ly/omarchy shell/apps) is installed.
   --no-autologin     Disable ly autologin (default: autologin on for target user)
   --repo URL         Omarchy repo URL (default: $REPO_URL)
+  --repo-branch B    Omarchy repo branch to clone (default: $REPO_BRANCH)
   --check            Detect OS and report package/component availability, then exit.
   --no-reboot        Do not print reboot suggestion at the end.
   -h, --help         Show this help.
@@ -390,6 +436,7 @@ parse_args() {
       --config-url) CONFIG_URL="$2"; shift 2 ;;
       --no-autologin) AUTOLOGIN=0; shift ;;
       --repo) REPO_URL="$2"; shift 2 ;;
+      --repo-branch) REPO_BRANCH="$2"; shift 2 ;;
       --check) CHECK=1; shift ;;
       --no-reboot) NOREBOOT=1; shift ;;
       -h|--help) usage; exit 0 ;;
@@ -436,6 +483,15 @@ main() {
   if [ -z "$CONFIG_URL" ]; then
     log "Phase 7: default mango config (no --config-url given)"
     install_default_mango_config
+  fi
+
+  log "Phase 8: omarchy runtime state (theme/background, ydotool)"
+  setup_omarchy_state
+  setup_ydotool
+
+  log "Phase 9: network/notification services"
+  if command -v NetworkManager >/dev/null 2>&1; then
+    root systemctl enable --now NetworkManager 2>/dev/null || true
   fi
 
   root systemctl daemon-reload

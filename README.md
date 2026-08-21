@@ -66,7 +66,9 @@ ly defaults to the `mango` wayland session; with autologin on, it logs you strai
 
 - **mango**: Arch via the **CachyOS repo** (`mangowm`, prebuilt — no AUR); Fedora/Debian built from source (pinned `wlroots 0.19.2` + `scenefx 0.4.1`). The bootstrap adds the CachyOS repo automatically if missing.
 - **ly**: Arch via CachyOS/Core (`ly`); Fedora/Debian built from source (zig). Replaces SDDM/GDM/LightDM.
-- **Omarchy shell**: cloned from the omarchy repo; `bin/` added to `PATH`. `quickshell` installed from CachyOS (`quickshell`) on Arch, best-effort source build elsewhere.
+- **Omarchy shell**: cloned from the omarchy repo (**`quattro` branch** by default — that is where `omarchy-clipboard-universal` and other features live; pass `--repo-branch` for a different branch); `bin/` added to `PATH`. `quickshell` installed from CachyOS (`quickshell`) on Arch, best-effort source build elsewhere.
+- **Omarchy feature dependencies** (installed automatically): `gum`, `rofi`, `imagemagick`, `python`, `ydotool` (+ `input` group + user service), `networkmanager`, `bluez-utils`, `playerctl`, `swaybg`, `libnotify`, `tesseract` language data (`tesseract-data-eng` on Arch, already in Fedora/Debian), `xdg-utils`, plus a notification daemon (`mako`). These are what make `omarchy-capture-text` (OCR), `omarchy-clipboard-universal`, and the various bar modules work.
+- **Wallpaper**: the script writes `~/.local/state/omarchy/current/theme.name` and a `background` symlink from your bundled `~/.config/omarchy/backgrounds/<theme>/` so the wallpaper picker finds images and the shell displays them (this state was previously excluded from the bundle).
 - **Omarchy CLI tools** (`omarchy-clipboard-universal`, `omarchy-capture-text`, etc.): shipped by the repo, made callable via `PATH`. Their runtime deps (`jq`, `wtype`, `slurp`, `grim`, `tesseract`, `wl-clipboard`, `cliphist`, `hyprpicker`, …) are installed.
 - **Apps**: `foot`, `walker`, `starship`, `fastfetch`, `neovim`, `mpv`, `fzf`, `ripgrep`, and friends.
 
