@@ -236,7 +236,7 @@ build_from_git() {
   rm -rf "$bd"; mkdir -p "$bd"
   git clone --depth 1 ${tag:+--branch "$tag"} "$url" "$bd" >"$logf" 2>&1 || { warn "clone failed: $name"; tail -n 20 "$logf"; return 1; }
   if [ -f "$bd/meson.build" ]; then
-    meson setup "$bd/build" -Dprefix=/usr $mopts >"$logf" 2>&1 || { warn "meson setup failed: $name"; tail -n 30 "$logf"; return 1; }
+    meson setup "$bd/build" "$bd" -Dprefix=/usr $mopts >"$logf" 2>&1 || { warn "meson setup failed: $name"; tail -n 30 "$logf"; return 1; }
     ninja -C "$bd/build" >>"$logf" 2>&1 || { warn "build failed: $name"; tail -n 30 "$logf"; return 1; }
     root ninja -C "$bd/build" install >>"$logf" 2>&1 || { warn "install failed: $name"; tail -n 30 "$logf"; return 1; }
   else
@@ -265,11 +265,27 @@ install_mango() {
   fi
 }
 
+install_zig() {
+  if command -v zig >/dev/null 2>&1; then skip "zig (already installed)"; return 0; fi
+  # try distro package first
+  if pm_available zig; then
+    pm_install zig && return 0
+  fi
+  log "zig not in repos; downloading official zig tarball..."
+  local ver=0.16.0 url="/tmp/opencode/zig.tar.xz"
+  curl -4 -fsSL "https://ziglang.org/download/${ver}/zig-x86_64-linux-${ver}.tar.xz" -o "$url" \
+    || { warn "zig download failed"; return 1; }
+  root tar xf "$url" -C /usr/local/ || { warn "zig extract failed"; return 1; }
+  root ln -sfn "/usr/local/zig-x86_64-linux-${ver}/zig" /usr/local/bin/zig
+  command -v zig >/dev/null 2>&1 && ok "zig installed ($(zig version))" || warn "zig still not found"
+}
+
 install_ly() {
   if command -v ly >/dev/null 2>&1; then skip "ly (already installed)"; else
     case "$FAMILY" in
       arch) pm_install ly ;;
       rpm|deb)
+        install_zig
         local bd="/tmp/opencode/build/ly"
         rm -rf "$bd"; mkdir -p "$bd"
         git clone --recurse-submodules https://github.com/fairyglade/ly.git "$bd" || { warn "ly clone failed"; return 1; }
@@ -484,6 +500,7 @@ configure_ly() {
   esac
   if [ "$AUTOLOGIN" = "1" ]; then
     local cfg=/etc/ly/config.ini
+    root mkdir -p /etc/ly
     root bash -c "touch '$cfg'"
     if ! grep -q '^\[login\]' "$cfg"; then
       root bash -c "printf '\n[login]\n' >> '$cfg'"
