@@ -79,6 +79,7 @@ All package installs are idempotent: already-installed packages are skipped.
 - `wlroots` is pinned to `0.19.2`, which is why mango is built from source off-Arch.
 - `hyprpicker` has no Fedora package, so it is built from source there.
 - The bundled `configs.tgz` contains only config/dotfiles (mango, omarchy, shell, small local scripts, icons). Large tool binaries (e.g. `mise`, `gh`, `gum`, `aether`, `herdr`), the re-cloned omarchy repo itself, and large custom font packs are **excluded** to keep the repo small; install those separately or extend `capture.sh` if you need them. Decent default fonts are installed by the script.
+- On Arch, **all dependencies install from the CachyOS repo via `pacman` — no AUR helper is used**. If a package is not present in any configured repo (e.g. `bibata-cursor-theme` is AUR-only on Arch and may be absent from CachyOS), it is skipped with a warning instead of falling back to the AUR. That only affects cosmetics (cursor theme); everything functional still installs.
 
 ## Verifying before a real run
 ```bash
