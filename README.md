@@ -21,7 +21,7 @@ Produces `mango-omarchy-capture/` containing `configs.tgz`, `mango.desktop`, `pk
 Upload `configs.tgz` (and `mango.desktop`) somewhere private reachable via URL (private GitHub repo, gist, or any file host).
 
 ### 2. On the fresh target machine (minimal TTY, network up)
-Ensure a fetcher, then run:
+Make sure a fetcher exists, then pipe the script straight into `bash` (no separate download step):
 ```bash
 source /etc/os-release
 case $ID in
@@ -30,8 +30,19 @@ case $ID in
   debian)   sudo apt-get update && sudo apt-get install -y curl ;;
 esac
 
-curl -fsSL https://<your-repo>/bootstrap.sh -o ~/bootstrap.sh
-bash ~/bootstrap.sh --config-url https://<your-private-url>/configs.tgz
+curl -fsSL https://raw.githubusercontent.com/kan935/mango-omarchy-setup/main/bootstrap.sh | bash
+```
+
+With your personal configs:
+```bash
+curl -fsSL https://raw.githubusercontent.com/kan935/mango-omarchy-setup/main/bootstrap.sh | bash -s -- --config-url https://<your-private-url>/configs.tgz
+```
+
+To inspect first, download then run:
+```bash
+curl -fsSL https://raw.githubusercontent.com/kan935/mango-omarchy-setup/main/bootstrap.sh -o ~/bootstrap.sh
+bash ~/bootstrap.sh --check          # dry run: detect OS + report package availability
+bash ~/bootstrap.sh                  # real install
 ```
 
 Without `--config-url`, only the system layer (mango, ly, omarchy shell, apps) is installed and a warning is printed.
