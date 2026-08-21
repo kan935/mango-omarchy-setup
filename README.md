@@ -2,26 +2,19 @@
 
 Cross-distro bootstrap that reproduces a **mango compositor + ly display manager + Omarchy shell** environment on a fresh minimal TTY install of **Arch Linux, Fedora, or Debian Testing**.
 
-It auto-detects the distro, installs all required packages (skipping anything already present), builds the components that have no distro package (mango, ly, quickshell), and optionally pulls your personal configs from a private URL.
+It auto-detects the distro, installs all required packages (skipping anything already present), builds the components that have no distro package (mango, ly, quickshell), and applies your personal configs — **including the configs** — from a single one-liner.
 
 ## Files
 
 - `bootstrap.sh` — the installer. Run on the fresh target machine.
-- `capture.sh` — run **once on your source Arch/Omarchy laptop** to export your configs + package lists.
+- `configs.tgz` — your personal configs (mango, omarchy, shell, dotfiles), bundled in this repo and applied by default.
+- `capture.sh` — run on the source machine to refresh `configs.tgz`, then commit + push.
 - `README.md` — this file.
 
-## Workflow
+## One-script install (configs included by default)
 
-### 1. Capture from your source laptop (Arch/Omarchy)
-```bash
-bash capture.sh
-```
-Produces `mango-omarchy-capture/` containing `configs.tgz`, `mango.desktop`, `pkg-explicit.txt`, `pkg-aur.txt`, `provenance.txt`.
+On the fresh target machine (minimal TTY, network up), make sure a fetcher exists, then pipe the script straight into `bash`. It installs mango, ly, quickshell, the Omarchy shell + features, **and applies `configs.tgz`** automatically:
 
-Upload `configs.tgz` (and `mango.desktop`) somewhere private reachable via URL (private GitHub repo, gist, or any file host).
-
-### 2. On the fresh target machine (minimal TTY, network up)
-Make sure a fetcher exists, then pipe the script straight into `bash` (no separate download step):
 ```bash
 source /etc/os-release
 case $ID in
@@ -33,19 +26,25 @@ esac
 curl -fsSL https://raw.githubusercontent.com/kan935/mango-omarchy-setup/main/bootstrap.sh | bash
 ```
 
-With your personal configs:
-```bash
-curl -fsSL https://raw.githubusercontent.com/kan935/mango-omarchy-setup/main/bootstrap.sh | bash -s -- --config-url https://<your-private-url>/configs.tgz
-```
-
 To inspect first, download then run:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kan935/mango-omarchy-setup/main/bootstrap.sh -o ~/bootstrap.sh
 bash ~/bootstrap.sh --check          # dry run: detect OS + report package availability
-bash ~/bootstrap.sh                  # real install
+bash ~/bootstrap.sh                  # real install (configs applied from the bundled configs.tgz)
 ```
 
-Without `--config-url`, only the system layer (mango, ly, omarchy shell, apps) is installed and a warning is printed.
+To use a different/newer config bundle instead of the bundled one:
+```bash
+curl -fsSL https://raw.githubusercontent.com/kan935/mango-omarchy-setup/main/bootstrap.sh | bash -s -- --config-url https://<your-url>/configs.tgz
+```
+
+### Refreshing the bundled configs
+```bash
+bash capture.sh        # exports this machine's configs to mango-omarchy-capture/configs.tgz
+# curate it, then replace configs.tgz in this repo and:
+git add configs.tgz && git commit -m "refresh configs" && git push
+```
+The installer pulls `configs.tgz` from the repo's `main` branch at runtime, so no separate hosting is needed.
 
 ### 3. Reboot and log in via ly
 ```bash
@@ -79,6 +78,7 @@ All package installs are idempotent: already-installed packages are skipped.
 - `quickshell` source build on Fedora/Debian may fail; the script continues and the bar/menu simply won't appear (mango + apps still work).
 - `wlroots` is pinned to `0.19.2`, which is why mango is built from source off-Arch.
 - `hyprpicker` has no Fedora package, so it is built from source there.
+- The bundled `configs.tgz` contains only config/dotfiles (mango, omarchy, shell, small local scripts, icons). Large tool binaries (e.g. `mise`, `gh`, `gum`, `aether`, `herdr`), the re-cloned omarchy repo itself, and large custom font packs are **excluded** to keep the repo small; install those separately or extend `capture.sh` if you need them. Decent default fonts are installed by the script.
 
 ## Verifying before a real run
 ```bash

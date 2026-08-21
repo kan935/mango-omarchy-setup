@@ -3,7 +3,7 @@
 set -o pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/basecamp/omarchy}"
-CONFIG_URL=""
+CONFIG_URL="${CONFIG_URL:-https://raw.githubusercontent.com/kan935/mango-omarchy-setup/main/configs.tgz}"
 CHECK=0
 AUTOLOGIN=1
 NOREBOOT=0
@@ -22,26 +22,29 @@ AUR_HELPER=""
 
 ARCH_PKGS=(
   base-devel
-  wayland seatd xdg-desktop-portal xdg-desktop-portal-wlr
+  wayland seatd xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk
   foot wl-clipboard cliphist grim slurp brightnessctl pamixer pavucontrol
   jq wtype tesseract starship fastfetch neovim mpv fzf ripgrep git curl
   walker bibata-cursor-theme hyprpicker mangowm-git quickshell scenefx
+  noto-fonts noto-fonts-emoji ttf-font-awesome ttf-jetbrains-mono
 )
 FEDORA_PKGS=(
   meson ninja-build gcc git curl
-  seatd xdg-desktop-portal xdg-desktop-portal-wlr
+  seatd xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk
   foot wl-clipboard cliphist grim slurp brightnessctl pamixer pavucontrol
   jq wtype tesseract tesseract-langpack-eng starship fastfetch neovim mpv fzf ripgrep
   walker bibata-cursor-theme
   zig pam-devel libxcb-devel xorg-x11-xauth xorg-x11-server-Xwayland
+  google-noto-sans-fonts google-noto-emoji-fonts fontawesome-fonts jetbrains-mono-fonts
 )
 DEBIAN_PKGS=(
   meson ninja-build build-essential pkg-config git curl
-  seatd xdg-desktop-portal xdg-desktop-portal-wlr
+  seatd xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk
   foot wl-clipboard cliphist grim slurp brightnessctl pamixer pavucontrol
   jq wtype tesseract tesseract-ocr-eng starship fastfetch neovim mpv fzf ripgrep
   walker bibata-cursor-theme hyprpicker
   zig libpam0g-dev libxcb-xkb-dev xauth xwayland
+  fonts-noto fonts-noto-color-emoji fonts-font-awesome fonts-jetbrains-mono
 )
 
 PKGS=()
@@ -296,7 +299,7 @@ apply_configs() {
   root chown -R "$TARGET_USER:" "$TARGET_HOME/.config" "$TARGET_HOME/.local" 2>/dev/null
   if [ "$TARGET_HOME" != "/home/mbm" ]; then
     log "Rewriting /home/mbm -> $TARGET_HOME in configs"
-    find "$TARGET_HOME/.config" -type f \( -name '*.conf' -o -name '*.sh' -o -name '*.json' -o -name '*.toml' -o -name '*.ini' \) \
+    find "$TARGET_HOME/.config" "$TARGET_HOME/.local" -type f \( -name '*.conf' -o -name '*.sh' -o -name '*.json' -o -name '*.toml' -o -name '*.ini' \) \
       -exec sed -i "s#/home/mbm#$TARGET_HOME#g" {} + 2>/dev/null
   fi
   if [ -f "$TARGET_HOME/mango.desktop" ]; then
