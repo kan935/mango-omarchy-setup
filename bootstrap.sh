@@ -82,7 +82,11 @@ resolve_target_user() {
     TARGET_USER="$(id -un)"
   else
     TARGET_USER="$(getent passwd | awk -F: '$3>=1000 && $3<65534 {print $1; exit}')"
-    [ -z "$TARGET_USER" ] && TARGET_USER=root
+    if [ -n "$TARGET_USER" ]; then
+      warn "Running as root with no SUDO_USER; installing Omarchy pieces for login user '$TARGET_USER'."
+    else
+      TARGET_USER=root
+    fi
   fi
   TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
   [ -z "$TARGET_HOME" ] && TARGET_HOME=/root
@@ -200,7 +204,7 @@ install_ly() {
 install_quickshell() {
   if command -v quickshell >/dev/null 2>&1; then skip "quickshell (already installed)"; return 0; fi
   case "$FAMILY" in
-    arch) pm_install quickshell; return $? ;;
+    arch) pm_install quickshell-git; return $? ;;
   esac
   warn "Quickshell source build is best-effort on $FAMILY; if it fails the bar/menu will not run but mango + apps will."
   local bd="/tmp/opencode/build/quickshell"
@@ -226,6 +230,46 @@ install_hyprpicker_fedora() {
   ( cd "$bd" && meson setup build && ninja -C build && root ninja -C build install ) || warn "hyprpicker build failed"
 }
 
+setup_omarchy_env() {
+  local envd="$TARGET_HOME/.config/environment.d"
+  root mkdir -p "$envd"; root chown -R "$TARGET_USER:" "$envd"
+  local f="$envd/omarchy.conf"
+  if ! root bash -c "grep -q OMARCHY_PATH '$f'" 2>/dev/null; then
+    root bash -c "printf 'OMARCHY_PATH=%s/.local/share/omarchy\nPATH=%s/.local/share/omarchy/bin:\$PATH\n' '$TARGET_HOME' '$TARGET_HOME' > '$f'"
+    root chown "$TARGET_USER:" "$f"
+    ok "wrote $f (session environment for ly/mango)"
+  else
+    skip "omarchy env already in $f"
+  fi
+  local rc
+  for rc in "$TARGET_HOME/.profile" "$TARGET_HOME/.bashrc" "$TARGET_HOME/.bash_profile"; do
+    root touch "$rc"; root chown "$TARGET_USER:" "$rc"
+    if ! root bash -c "grep -q OMARCHY_PATH '$rc'"; then
+      root bash -c "cat >> '$rc'" <<EOF
+export OMARCHY_PATH="\$HOME/.local/share/omarchy"
+export PATH="\$HOME/.local/share/omarchy/bin:\$PATH"
+EOF
+      ok "added omarchy PATH to $rc"
+    else
+      skip "omarchy PATH already in $rc"
+    fi
+  done
+}
+
+install_default_mango_config() {
+  local cfg="$TARGET_HOME/.config/mango"
+  if [ -f "$cfg/config.conf" ]; then skip "mango config already present (not overwriting)"; return 0; fi
+  root mkdir -p "$cfg"; root chown -R "$TARGET_USER:" "$cfg"
+  root bash -c "printf 'exec-once=~/.config/mango/autostart.sh\n' > '$cfg/config.conf'"
+  root bash -c "cat > '$cfg/autostart.sh'" <<'EOF'
+#!/bin/bash
+systemctl --user import-environment DISPLAY WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_SESSION_TYPE 2>/dev/null
+omarchy-launch-shell &
+EOF
+  root chmod +x "$cfg/autostart.sh"; root chown "$TARGET_USER:" "$cfg/autostart.sh"
+  ok "created default mango config that launches omarchy-shell (apply your own via --config-url for full setup)"
+}
+
 install_omarchy_shell() {
   local dest="$TARGET_HOME/.local/share/omarchy"
   if [ ! -d "$dest/bin" ]; then
@@ -236,17 +280,7 @@ install_omarchy_shell() {
   else
     skip "omarchy repo (already present)"
   fi
-  local rc="$TARGET_HOME/.profile"
-  root touch "$rc"; root chown "$TARGET_USER:" "$rc"
-  if ! grep -q 'OMARCHY_PATH' "$rc"; then
-    root bash -c "cat >> '$rc'" <<EOF
-export OMARCHY_PATH="\$HOME/.local/share/omarchy"
-export PATH="\$HOME/.local/share/omarchy/bin:\$PATH"
-EOF
-    ok "added omarchy PATH to $rc"
-  else
-    skip "omarchy PATH already in $rc"
-  fi
+  setup_omarchy_env
   install_quickshell
 }
 
@@ -383,6 +417,10 @@ main() {
 
   log "Phase 6: personal configs"
   apply_configs
+  if [ -z "$CONFIG_URL" ]; then
+    log "Phase 7: default mango config (no --config-url given)"
+    install_default_mango_config
+  fi
 
   root systemctl daemon-reload
   ok "Installation complete."
