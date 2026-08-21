@@ -26,6 +26,7 @@ ARCH_PKGS=(
   jq wtype tesseract tesseract-data-eng starship fastfetch neovim mpv fzf ripgrep git curl
   walker bibata-cursor-theme hyprpicker mangowm quickshell
   gum rofi imagemagick python ydotool networkmanager bluez-utils playerctl swaybg xdg-utils
+  nautilus github-cli
   noto-fonts noto-fonts-emoji ttf-font-awesome ttf-jetbrains-mono
 )
 FEDORA_PKGS=(
@@ -35,6 +36,7 @@ FEDORA_PKGS=(
   jq wtype tesseract tesseract-langpack-eng starship fastfetch neovim mpv fzf ripgrep
   walker bibata-cursor-theme
   gum rofi ImageMagick python3 python-unversioned-command ydotool NetworkManager bluez playerctl swaybg xdg-utils
+  nautilus gh
   zig pam-devel libxcb-devel xorg-x11-xauth xorg-x11-server-Xwayland
   google-noto-sans-fonts google-noto-emoji-fonts jetbrains-mono-fonts
 )
@@ -45,6 +47,7 @@ DEBIAN_PKGS=(
   jq wtype tesseract tesseract-ocr-eng starship fastfetch neovim mpv fzf ripgrep
   walker bibata-cursor-theme hyprpicker
   gum rofi imagemagick python3 python-is-python3 ydotool network-manager bluez playerctl swaybg xdg-utils
+  nautilus gh
   zig libpam0g-dev libxcb-xkb-dev xauth xwayland
   fonts-noto fonts-noto-color-emoji fonts-font-awesome fonts-jetbrains-mono
 )
@@ -404,6 +407,29 @@ configure_ly() {
   fi
 }
 
+verify_runtime() {
+  log "Phase 10: runtime sanity checks (these power clipboard / omarchy features)"
+  local needed=(mmsg wtype jq wl-copy wl-paste cliphist omarchy-clipboard-universal)
+  local missing=()
+  for b in "${needed[@]}"; do
+    if sudo -u "$TARGET_USER" bash -lc "command -v '$b'" >/dev/null 2>&1; then
+      ok "$b present for $TARGET_USER"
+    else
+      warn "$b NOT found for $TARGET_USER (clipboard/features may break)"
+      missing+=("$b")
+    fi
+  done
+  if sudo -u "$TARGET_USER" bash -lc 'mmsg get focusing-client' >/dev/null 2>&1; then
+    ok "mmsg IPC reachable (terminal-aware copy/paste will work)"
+  else
+    warn "mmsg IPC not reachable right now (mango not running yet, or older mangowm)."
+    warn "Verify after first login: 'mmsg get focusing-client' should print JSON with appid."
+  fi
+  if [ ${#missing[@]} -gt 0 ]; then
+    warn "Missing binaries: ${missing[*]} -- re-run the installer, or 'sudo pacman -S <pkg>' / 'dnf install' / 'apt install' the equivalents."
+  fi
+}
+
 run_check() {
   detect_os
   resolve_target_user
@@ -505,6 +531,8 @@ main() {
   if command -v NetworkManager >/dev/null 2>&1; then
     root systemctl enable --now NetworkManager 2>/dev/null || true
   fi
+
+  verify_runtime
 
   root systemctl daemon-reload
   ok "Installation complete."
