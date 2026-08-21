@@ -64,9 +64,9 @@ ly defaults to the `mango` wayland session; with autologin on, it logs you strai
 
 ## What gets installed, per distro
 
-- **mango**: Arch via AUR (`mangowm-git`); Fedora/Debian built from source (pinned `wlroots 0.19.2` + `scenefx 0.4.1`).
-- **ly**: Arch via repo; Fedora/Debian built from source (zig). Replaces SDDM/GDM/LightDM.
-- **Omarchy shell**: cloned from the omarchy repo; `bin/` added to `PATH`. `quickshell` installed (AUR on Arch, best-effort source build elsewhere).
+- **mango**: Arch via the **CachyOS repo** (`mangowm`, prebuilt — no AUR); Fedora/Debian built from source (pinned `wlroots 0.19.2` + `scenefx 0.4.1`). The bootstrap adds the CachyOS repo automatically if missing.
+- **ly**: Arch via CachyOS/Core (`ly`); Fedora/Debian built from source (zig). Replaces SDDM/GDM/LightDM.
+- **Omarchy shell**: cloned from the omarchy repo; `bin/` added to `PATH`. `quickshell` installed from CachyOS (`quickshell`) on Arch, best-effort source build elsewhere.
 - **Omarchy CLI tools** (`omarchy-clipboard-universal`, `omarchy-capture-text`, etc.): shipped by the repo, made callable via `PATH`. Their runtime deps (`jq`, `wtype`, `slurp`, `grim`, `tesseract`, `wl-clipboard`, `cliphist`, `hyprpicker`, …) are installed.
 - **Apps**: `foot`, `walker`, `starship`, `fastfetch`, `neovim`, `mpv`, `fzf`, `ripgrep`, and friends.
 

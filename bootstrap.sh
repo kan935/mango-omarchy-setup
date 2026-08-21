@@ -18,14 +18,12 @@ err()  { printf '\033[1;31m[x]\033[0m %s\n' "$*" >&2; }
 
 FAMILY=""
 PM=""
-AUR_HELPER=""
 
 ARCH_PKGS=(
-  base-devel
   wayland seatd xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk
   foot wl-clipboard cliphist grim slurp brightnessctl pamixer pavucontrol
   jq wtype tesseract starship fastfetch neovim mpv fzf ripgrep git curl
-  walker bibata-cursor-theme hyprpicker mangowm-git quickshell scenefx
+  walker bibata-cursor-theme hyprpicker mangowm quickshell
   noto-fonts noto-fonts-emoji ttf-font-awesome ttf-jetbrains-mono
 )
 FEDORA_PKGS=(
@@ -106,7 +104,7 @@ pm_installed() {
 
 pm_available() {
   case "$FAMILY" in
-    arch) pacman -Si "$1" &>/dev/null || yay -Si "$1" &>/dev/null ;;
+    arch) pacman -Si "$1" &>/dev/null ;;
     rpm)  dnf list available "$1" &>/dev/null ;;
     deb)  apt-cache policy "$1" 2>/dev/null | awk '/Candidate:/{c=$2} END{exit (c==""||c=="(none)")?1:0}' ;;
   esac
@@ -116,10 +114,10 @@ pm_install() {
   local p
   for p in "$@"; do
     if pm_installed "$p"; then skip "$p (already installed)"; continue; fi
-    if ! pm_available "$p"; then warn "$p not available in repos - skipping"; continue; fi
+    if ! pm_available "$p"; then warn "$p not available in repos - skipping (no AUR fallback by design)"; continue; fi
     ok "installing $p"
     case "$FAMILY" in
-      arch) yay -S --needed --noconfirm "$p" ;;
+      arch) root pacman -S --needed --noconfirm "$p" ;;
       rpm)  root dnf install -y "$p" ;;
       deb)  root apt-get install -y "$p" ;;
     esac
@@ -134,18 +132,27 @@ ensure_fetcher() {
   esac
 }
 
-install_aur_helper() {
-  if command -v yay >/dev/null 2>&1 || command -v paru >/dev/null 2>&1; then
-    AUR_HELPER="$(command -v yay || command -v paru)"
-    ok "AUR helper present: $AUR_HELPER"; return 0
+setup_cachyos_repo() {
+  if grep -q '^\[cachyos\]' /etc/pacman.conf 2>/dev/null; then
+    skip "cachyos repo already present in /etc/pacman.conf"
+    return 0
   fi
-  log "Bootstrapping yay (AUR helper)..."
-  root pacman -S --needed --noconfirm base-devel git
-  local td; td="$(root mktemp -d)"
-  root chmod 777 "$td"
-  sudo -u "$TARGET_USER" bash -c "cd '$td' && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm"
-  AUR_HELPER="$(command -v yay || command -v paru)"
-  [ -n "$AUR_HELPER" ] && ok "yay installed" || warn "yay install failed"
+  log "Adding CachyOS repository (prebuilt mango/quickshell/ly etc. via pacman, no AUR)..."
+  root pacman-key --init 2>/dev/null || true
+  if ! root pacman-key --recv-keys F3B607488DB35A47 --keyserver keyserver.ubuntu.com 2>/dev/null; then
+    root pacman-key --recv-keys F3B607488DB35A47 --keyserver hkps://keys.openpgp.org 2>/dev/null \
+      || curl -fsSL https://mirror.cachyos.org/cachyos.key -o /tmp/cachyos.key && root pacman-key --add /tmp/cachyos.key
+  fi
+  root pacman-key --lsign-key F3B607488DB35A47
+  root bash -c "printf 'Server = https://mirror.cachyos.org/repo/\$arch\n' > /etc/pacman.d/cachyos-mirrorlist"
+  root bash -c "cat >> /etc/pacman.conf" <<'EOF'
+
+[cachyos]
+Include = /etc/pacman.d/cachyos-mirrorlist
+EOF
+  root pacman -Sy --noconfirm
+  root pacman -S --needed --noconfirm cachyos-keyring cachyos-mirrorlist 2>/dev/null || true
+  ok "CachyOS repo enabled"
 }
 
 build_dep_wlroots() {
@@ -179,7 +186,7 @@ build_from_git() {
 install_mango() {
   if command -v mango >/dev/null 2>&1; then skip "mango (already installed)"; return 0; fi
   case "$FAMILY" in
-    arch) pm_install mangowm-git ;;
+    arch) pm_install mangowm ;;
     rpm|deb)
       build_dep_wlroots
       build_from_git https://gitlab.freedesktop.org/wlroots/wlroots.git 0.19.2 "" wlroots
@@ -187,6 +194,12 @@ install_mango() {
       build_from_git https://github.com/mangowm/mango.git "" "" mango
       ;;
   esac
+  if [ ! -f /usr/share/wayland-sessions/mango.desktop ]; then
+    local f
+    for f in /usr/share/wayland-sessions/mangowm.desktop /usr/share/wayland-sessions/*mango*.desktop; do
+      if [ -f "$f" ]; then root ln -sf "$f" /usr/share/wayland-sessions/mango.desktop; ok "linked $f -> mango.desktop"; break; fi
+    done
+  fi
 }
 
 install_ly() {
@@ -207,7 +220,7 @@ install_ly() {
 install_quickshell() {
   if command -v quickshell >/dev/null 2>&1; then skip "quickshell (already installed)"; return 0; fi
   case "$FAMILY" in
-    arch) pm_install quickshell-git; return $? ;;
+    arch) pm_install quickshell; return $? ;;
   esac
   warn "Quickshell source build is best-effort on $FAMILY; if it fails the bar/menu will not run but mango + apps will."
   local bd="/tmp/opencode/build/quickshell"
@@ -398,7 +411,7 @@ main() {
 
   ensure_fetcher
   case "$FAMILY" in
-    arch) install_aur_helper ;;
+    arch) setup_cachyos_repo ;;
     deb)  root apt-get update ;;
   esac
 
