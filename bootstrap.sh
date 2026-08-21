@@ -331,7 +331,7 @@ apply_configs() {
   root chown -R "$TARGET_USER:" "$TARGET_HOME/.config" "$TARGET_HOME/.local" 2>/dev/null
   if [ "$TARGET_HOME" != "/home/mbm" ]; then
     log "Rewriting /home/mbm -> $TARGET_HOME in configs"
-    find "$TARGET_HOME/.config" "$TARGET_HOME/.local" -type f \( -name '*.conf' -o -name '*.sh' -o -name '*.json' -o -name '*.toml' -o -name '*.ini' \) \
+    find "$TARGET_HOME/.config" "$TARGET_HOME/.local" -type f \( -name '*.conf' -o -name '*.sh' -o -name '*.json' -o -name '*.toml' -o -name '*.ini' -o -name '*.desktop' \) \
       -exec sed -i "s#/home/mbm#$TARGET_HOME#g" {} + 2>/dev/null
   fi
   if [ -f "$TARGET_HOME/mango.desktop" ]; then
