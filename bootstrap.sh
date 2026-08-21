@@ -126,7 +126,7 @@ pm_install() {
     case "$FAMILY" in
       arch) root pacman -S --needed --noconfirm "$p" ;;
       rpm)  root dnf install -y "$p" ;;
-      deb)  root apt-get install -y "$p" ;;
+      deb)  root apt-get install -y --no-install-recommends "$p" ;;
     esac
   done
 }
@@ -168,24 +168,62 @@ build_dep_wlroots() {
       root dnf builddep -y wlroots 2>/dev/null || pm_install meson ninja-build wayland-devel wayland-protocols-devel libinput-devel libxkbcommon-devel pixman-devel libseat-devel libdrm-devel libdisplay-info-devel libliftoff-devel libxcb-devel libxcb-composite0-devel libxcb-res0-devel libxcb-xfixes0-devel libxcb-errors-devel libxcb-util-devel libxcb-icccm-devel libxcb-image-devel libxcb-randr-devel libxcb-xkb-devel pcre2-devel libpng-devel cairo-devel pango-devel hwdata libcap-devel
       ;;
     deb)
-      root apt-get build-dep -y wlroots 2>/dev/null || pm_install meson ninja-build libwayland-dev wayland-protocols libinput-dev libxkbcommon-dev libpixman-1-dev libseat-dev libdrm-dev libdisplay-info-dev libliftoff-dev libxcb-composite0-dev libxcb-res0-dev libxcb-xfixes0-dev libxcb-errors-dev libxcb-util-dev libxcb-icccm4-dev libxcb-image0-dev libxcb-randr0-dev libxcb-xkb-dev libxcb1-dev libpcre2-dev libpng-dev libcairo2-dev libpango1.0-dev hwdata libcap-dev
+      # build-dep needs deb-src (enabled by setup_deb_src); it covers most deps.
+      # The explicit list adds wlroots >=0.18 deps and mango/scenefx deps.
+      root apt-get build-dep -y wlroots 2>/dev/null || true
+      pm_install meson ninja-build pkg-config gcc g++ \
+        libwayland-dev wayland-protocols libxkbcommon-dev libinput-dev libpixman-1-dev \
+        libseat-dev libdrm-dev libdisplay-info-dev libliftoff-dev libgbm-dev libegl1-mesa-dev \
+        libgles2-mesa-dev libevdev-dev libudev-dev libsystemd-dev libpam0g-dev libcap-dev \
+        libpango1.0-dev libcairo2-dev libpng-dev libxcb1-dev libxcb-composite0-dev \
+        libxcb-res0-dev libxcb-xfixes0-dev libxcb-errors-dev libxcb-util-dev libxcb-icccm-dev \
+        libxcb-image0-dev libxcb-randr0-dev libxcb-xkb-dev libpcre2-dev hwdata
       ;;
   esac
 }
 
+setup_deb_src() {
+  local needed=0
+  if grep -rq '^deb ' /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null; then
+    if ! grep -rq '^deb-src ' /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null; then
+      sed -n 's/^deb /deb-src /p' /etc/apt/sources.list 2>/dev/null > /tmp/debsrc.list
+      for f in /etc/apt/sources.list.d/*.list; do
+        [ -f "$f" ] || continue
+        sed -n 's/^deb /deb-src /p' "$f" > "${f%.list}.src.list" 2>/dev/null
+      done
+      [ -s /tmp/debsrc.list ] && root cp /tmp/debsrc.list /etc/apt/sources.list.d/zz-debsrc.list
+      needed=1
+    fi
+  fi
+  for f in /etc/apt/sources.list.d/*.sources; do
+    [ -f "$f" ] || continue
+    if grep -q '^Types:.*deb$' "$f" && ! grep -q 'deb-src' "$f"; then
+      root sed -i 's/^Types: deb$/Types: deb deb-src/' "$f"
+      needed=1
+    fi
+  done
+  if [ "$needed" = 1 ]; then
+    log "Enabled deb-src (needed for source builds); updating apt..."
+    root apt-get update
+  else
+    skip "deb-src already enabled"
+  fi
+}
+
 build_from_git() {
-  local url="$1" tag="$2" dl="$3" name="$4"
+  local url="$1" tag="$2" dl="$3" name="$4" mopts="${5:-}"
   local bd="/tmp/opencode/build/$name"
   if command -v "$name" >/dev/null 2>&1; then skip "$name (already built)"; return 0; fi
   log "Building $name from source (tag: ${tag:-HEAD})..."
   rm -rf "$bd"; mkdir -p "$bd"
   git clone --depth 1 ${tag:+--branch "$tag"} "$url" "$bd" || { warn "clone failed: $name"; return 1; }
   if [ -f "$bd/meson.build" ]; then
-    meson setup "$bd/build" -Dprefix=/usr || { warn "meson setup failed: $name"; return 1; }
+    meson setup "$bd/build" -Dprefix=/usr $mopts || { warn "meson setup failed: $name"; return 1; }
     ninja -C "$bd/build" || { warn "build failed: $name"; return 1; }
     root ninja -C "$bd/build" install || { warn "install failed: $name"; return 1; }
   else
-    warn "$name has no meson.build; build manually"; return 1
+    warn "$name has no meson.build; build manually"
+    return 1
   fi
   command -v "$name" >/dev/null 2>&1 && ok "$name built" || warn "$name binary not found after build"
 }
@@ -196,7 +234,7 @@ install_mango() {
     arch) pm_install mangowm ;;
     rpm|deb)
       build_dep_wlroots
-      build_from_git https://gitlab.freedesktop.org/wlroots/wlroots.git 0.19.2 "" wlroots
+      build_from_git https://gitlab.freedesktop.org/wlroots/wlroots.git 0.19.2 "" wlroots "-Dexamples=false -Ddocs=false -Dtests=false"
       build_from_git https://github.com/wlrfx/scenefx.git 0.4.1 "" scenefx
       build_from_git https://github.com/mangowm/mango.git "" "" mango
       ;;
@@ -528,7 +566,7 @@ main() {
   ensure_fetcher
   case "$FAMILY" in
     arch) setup_cachyos_repo ;;
-    deb)  root apt-get update ;;
+    deb)  setup_deb_src; root apt-get update ;;
   esac
 
   log "Phase 1: base packages"
