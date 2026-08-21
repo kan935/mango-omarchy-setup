@@ -333,6 +333,13 @@ apply_configs() {
     log "Rewriting /home/mbm -> $TARGET_HOME in configs"
     find "$TARGET_HOME/.config" "$TARGET_HOME/.local" -type f \( -name '*.conf' -o -name '*.sh' -o -name '*.json' -o -name '*.toml' -o -name '*.ini' -o -name '*.desktop' \) \
       -exec sed -i "s#/home/mbm#$TARGET_HOME#g" {} + 2>/dev/null
+    log "Rewriting symlink targets /home/mbm -> $TARGET_HOME"
+    while IFS= read -r -d '' link; do
+      tgt=$(readlink "$link" 2>/dev/null || true)
+      case "$tgt" in
+        /home/mbm*) ntgt="${tgt//\/home\/mbm/$TARGET_HOME}"; root ln -sfn "$ntgt" "$link" ;;
+      esac
+    done < <(find "$TARGET_HOME/.config" "$TARGET_HOME/.local" -type l -print0 2>/dev/null)
   fi
   if [ -f "$TARGET_HOME/mango.desktop" ]; then
     root install -Dm644 "$TARGET_HOME/mango.desktop" /usr/share/wayland-sessions/mango.desktop
@@ -352,6 +359,30 @@ setup_ydotool() {
       systemctl --user enable ydotool.service 2>/dev/null || true
     ok "enabled ydotool user service (best-effort)"
   fi
+}
+
+setup_theme_wallpapers() {
+  local themes_root="$TARGET_HOME/.local/share/omarchy/themes"
+  local user_themes="$TARGET_HOME/.config/omarchy/themes"
+  local user_bg="$TARGET_HOME/.config/omarchy/backgrounds"
+  local d name src dst
+  root mkdir -p "$user_bg"; root chown -R "$TARGET_USER:" "$user_bg"
+  for d in "$themes_root"/*/ "$user_themes"/*/; do
+    [ -d "$d" ] || continue
+    name="$(basename "$d")"
+    src="$d/backgrounds"
+    [ -d "$src" ] || continue
+    dst="$user_bg/$name"
+    if [ -d "$dst" ] && [ -n "$(ls -A "$dst" 2>/dev/null)" ]; then
+      skip "wallpapers already present for theme: $name"
+      continue
+    fi
+    root mkdir -p "$dst"; root chown "$TARGET_USER:" "$dst"
+    root bash -c "cp -rL '$src'/* '$dst'/ 2>/dev/null" || true
+    root chown -R "$TARGET_USER:" "$dst"
+    ok "installed wallpapers for theme: $name"
+  done
+  ok "all themes now have their wallpapers in $user_bg"
 }
 
 setup_omarchy_state() {
@@ -524,6 +555,7 @@ main() {
   fi
 
   log "Phase 8: omarchy runtime state (theme/background, ydotool)"
+  setup_theme_wallpapers
   setup_omarchy_state
   setup_ydotool
 
