@@ -292,13 +292,25 @@ EOF
 
 install_omarchy_shell() {
   local dest="$TARGET_HOME/.local/share/omarchy"
-  if [ ! -d "$dest/bin" ]; then
+  local need_clone=0
+  if [ ! -d "$dest/.git" ]; then
+    need_clone=1
+  else
+    local cur_branch cur_url
+    cur_branch="$(sudo -u "$TARGET_USER" git -C "$dest" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+    cur_url="$(sudo -u "$TARGET_USER" git -C "$dest" remote get-url origin 2>/dev/null)"
+    if [ "$cur_branch" != "$REPO_BRANCH" ] || [ "$cur_url" != "$REPO_URL" ]; then
+      log "omarchy repo mismatch (has '$cur_branch' @ $cur_url); re-cloning $REPO_URL @ $REPO_BRANCH"
+      rm -rf "$dest"; need_clone=1
+    fi
+  fi
+  if [ "$need_clone" = 1 ]; then
     log "Cloning omarchy repo -> $dest"
     root mkdir -p "$dest"
     root chown -R "$TARGET_USER:" "$dest"
     sudo -u "$TARGET_USER" git clone --depth 1 -b "$REPO_BRANCH" "$REPO_URL" "$dest" || { warn "omarchy clone failed"; return 1; }
   else
-    skip "omarchy repo (already present)"
+    skip "omarchy repo (already present, branch $REPO_BRANCH)"
   fi
   setup_omarchy_env
   install_quickshell
