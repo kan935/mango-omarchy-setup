@@ -246,14 +246,40 @@ build_from_git() {
   command -v "$name" >/dev/null 2>&1 && ok "$name built" || warn "$name binary not found after build"
 }
 
+setup_terra_repo() {
+  # Fedora: mangowm ships in the third-party Terra repo (per mango docs).
+  # Detect an existing Terra install; only add it if missing.
+  [ "$FAMILY" = "rpm" ] || return 0
+  if [ -f /etc/yum.repos.d/terra.repo ] || pm_installed terra-release; then
+    skip "Terra repo already present"
+    return 0
+  fi
+  log "Adding Terra repo (mangowm on Fedora, per https://mangowm.github.io/docs)..."
+  root dnf install -y --nogpgcheck \
+    --repofrompath 'terra,https://repos.fyralabs.com/terra$releasever' terra-release \
+    || { warn "Terra repo setup failed"; return 1; }
+  ok "Terra repo enabled"
+}
+
 install_mango() {
   if command -v mango >/dev/null 2>&1; then skip "mango (already installed)"; return 0; fi
   case "$FAMILY" in
     arch) pm_install mangowm ;;
-    rpm|deb)
+    rpm)
+      setup_terra_repo
+      pm_install mangowm
+      if ! command -v mango >/dev/null 2>&1; then
+        warn "mangowm unavailable via repos - building from source (slow fallback)"
+        build_dep_wlroots
+        build_from_git https://gitlab.freedesktop.org/wlroots/wlroots.git 0.20.2 "" wlroots "-Dexamples=false -Ddocs=false -Dtests=false"
+        build_from_git https://github.com/wlrfx/scenefx.git 0.5 "" scenefx
+        build_from_git https://github.com/mangowm/mango.git "" "" mango
+      fi
+      ;;
+    deb)
       build_dep_wlroots
-      build_from_git https://gitlab.freedesktop.org/wlroots/wlroots.git 0.19.2 "" wlroots "-Dexamples=false -Ddocs=false -Dtests=false"
-      build_from_git https://github.com/wlrfx/scenefx.git 0.4.1 "" scenefx
+      build_from_git https://gitlab.freedesktop.org/wlroots/wlroots.git 0.20.2 "" wlroots "-Dexamples=false -Ddocs=false -Dtests=false"
+      build_from_git https://github.com/wlrfx/scenefx.git 0.5 "" scenefx
       build_from_git https://github.com/mangowm/mango.git "" "" mango
       ;;
   esac
@@ -281,25 +307,33 @@ install_zig() {
 }
 
 install_ly() {
-  if command -v ly >/dev/null 2>&1; then skip "ly (already installed)"; else
-    case "$FAMILY" in
-      arch) pm_install ly ;;
-      rpm|deb)
-        install_zig
-        local bd="/tmp/opencode/build/ly"
-        rm -rf "$bd"; mkdir -p "$bd"
-        git clone --recurse-submodules https://github.com/fairyglade/ly.git "$bd" || { warn "ly clone failed"; return 1; }
-        ( cd "$bd" && zig build installexe -Dinit_system=systemd ) || { warn "ly build failed"; return 1; }
-        ok "ly built"
-        ;;
-    esac
+  if command -v ly >/dev/null 2>&1; then skip "ly (already installed)"; return 0; fi
+  # ly ships in official Fedora repos (and CachyOS/Arch); prefer the package.
+  if [ "$FAMILY" != "deb" ] && pm_available ly; then
+    pm_install ly
+    command -v ly >/dev/null 2>&1 && return 0
   fi
+  # Source-build fallback (Debian, or rpm without a ly package).
+  log "Building ly from source (no distro package)..."
+  install_zig || return 1
+  local bd="/tmp/opencode/build/ly"
+  rm -rf "$bd"; mkdir -p "$bd"
+  git clone --recurse-submodules https://github.com/fairyglade/ly.git "$bd" || { warn "ly clone failed"; return 1; }
+  ( cd "$bd" && zig build installexe -Dinit_system=systemd ) || { warn "ly build failed"; return 1; }
+  ok "ly built"
 }
 
 install_quickshell() {
   if command -v quickshell >/dev/null 2>&1; then skip "quickshell (already installed)"; return 0; fi
   case "$FAMILY" in
     arch) pm_install quickshell; return $? ;;
+    rpm)
+      setup_terra_repo
+      if pm_available quickshell-git || pm_available quickshell; then
+        pm_install quickshell-git || pm_install quickshell
+        command -v quickshell >/dev/null 2>&1 && return 0
+      fi
+      ;;
   esac
   warn "Quickshell source build is best-effort on $FAMILY; if it fails the bar/menu will not run but mango + apps will."
   local bd="/tmp/opencode/build/quickshell"
@@ -601,6 +635,7 @@ main() {
   ensure_fetcher
   case "$FAMILY" in
     arch) setup_cachyos_repo ;;
+    rpm)  setup_terra_repo ;;
     deb)  setup_deb_src; root apt-get update ;;
   esac
 
