@@ -2,6 +2,8 @@
 
 set -o pipefail
 
+export GIT_TERMINAL_PROMPT=0  # never ask for github user/pass; fail instead
+
 REPO_URL="${REPO_URL:-https://github.com/basecamp/omarchy}"
 REPO_BRANCH="${REPO_BRANCH:-quattro}"
 CONFIG_URL="${CONFIG_URL:-https://raw.githubusercontent.com/kan935/mango-omarchy-setup/main/configs.tgz}"
@@ -48,7 +50,7 @@ DEBIAN_PKGS=(
   walker bibata-cursor-theme hyprpicker
   gum rofi imagemagick python3 python-is-python3 ydotool network-manager bluez playerctl swaybg xdg-utils
   nautilus gh
-  zig libpam0g-dev libxcb-xkb-dev xauth xwayland
+  zig xz-utils libpam0g-dev libxcb-xkb-dev xauth xwayland
   fonts-noto fonts-noto-color-emoji fonts-font-awesome fonts-jetbrains-mono
 )
 
@@ -57,8 +59,11 @@ PKGS=()
 root() {
   if [ "$(id -u)" -eq 0 ]; then
     "$@"
-  else
+  elif command -v sudo >/dev/null 2>&1; then
     sudo "$@"
+  else
+    err "Not root and sudo not installed. Run as root, or 'apt install sudo' / 'pacman -S sudo' first."
+    return 1
   fi
 }
 
@@ -133,7 +138,8 @@ pm_install() {
 
 ensure_fetcher() {
   case "$FAMILY" in
-    arch) pm_installed curl || root pacman -Sy --noconfirm curl git ;;
+    arch) root pacman -Sy --noconfirm archlinux-keyring 2>/dev/null || true
+          pm_installed curl || root pacman -Sy --noconfirm curl git ;;
     rpm)  pm_installed curl || root dnf install -y curl ;;
     deb)  pm_installed curl || { root apt-get update && root apt-get install -y curl; } ;;
   esac
